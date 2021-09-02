@@ -1,0 +1,69 @@
+---
+- hosts: all
+  tasks:
+    - name: Install repo
+      blockinfile:
+        state: present
+        insertafter: EOF
+        dest: /etc/pacman.conf
+        marker: "# added by ansible"
+        content: |
+          [archzfs]
+          # Origin Server - France
+          Server = http://archzfs.com/$repo/x86_64
+          # Mirror - Germany
+          Server = http://mirror.sum7.eu/archlinux/archzfs/$repo/x86_64
+          # Mirror - Germany
+          Server = https://mirror.biocrafting.net/archlinux/archzfs/$repo/x86_64
+          # Mirror - India
+          Server = https://mirror.in.themindsmaze.com/archzfs/$repo/x86_64
+          # Mirror - US
+          Server = https://zxcvfdsa.com/archzfs/$repo/$arch
+
+    - name: Init archlinux keyring
+      shell:
+        cmd: "{{ item }}"
+      with_items:
+        - pacman-key --init
+        - pacman-key --populate
+        - pacman -Syy --noconfirm
+
+    - name: Delete conflicting packages
+      pacman:
+        name: iptables
+        state: absent
+        force: true
+
+    - name: Install required packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - git
+        - lxd
+        - python-setuptools
+        - python-pip
+        - gcc
+        - zfs
+
+    - name: Start lxd service
+      systemd:
+        name: lxd
+        enabled: true
+        state: started
+
+    - name: Init lxd
+      shell: "{{ item }}"
+      loop:
+        - zpool create -f lxd /dev/sdb
+        - lxd init --auto --storage-backend=zfs --storage-pool=lxd
+
+    - name: Clone lxdui
+      git:
+        dest: /root/lxdui
+        repo: https://github.com/AdaptiveScale/lxdui.git
+
+    - name: Install lxdui
+      shell:
+        chdir: /root/lxdui
+        cmd: python3 setup.py install
