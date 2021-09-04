@@ -1,32 +1,13 @@
 ---
 - hosts: all
   tasks:
-    - name: Install repo
-      blockinfile:
-        state: present
-        insertafter: EOF
-        dest: /etc/pacman.conf
-        marker: "# added by ansible"
-        content: |
-          [archzfs]
-          # Origin Server - France
-          Server = http://archzfs.com/$repo/x86_64
-          # Mirror - Germany
-          Server = http://mirror.sum7.eu/archlinux/archzfs/$repo/x86_64
-          # Mirror - Germany
-          Server = https://mirror.biocrafting.net/archlinux/archzfs/$repo/x86_64
-          # Mirror - India
-          Server = https://mirror.in.themindsmaze.com/archzfs/$repo/x86_64
-          # Mirror - US
-          Server = https://zxcvfdsa.com/archzfs/$repo/$arch
-
     - name: Init archlinux keyring
       shell:
         cmd: "{{ item }}"
       with_items:
         - pacman-key --init
         - pacman-key --populate
-        - pacman -Syy --noconfirm
+        - pacman -Sy --noconfirm
 
     - name: Delete conflicting packages
       pacman:
@@ -44,7 +25,24 @@
         - python-setuptools
         - python-pip
         - gcc
-        - zfs
+
+    - name: Setup unprivileges containers
+      blockinfile:
+        state: present
+        insertafter: EOF
+        dest: /etc/lxc/default.conf
+        marker: "# {mark} added by ansible"
+        block: |
+          lxc.idmap = u 0 100000 65536
+          lxc.idmap = g 0 100000 65536
+
+    - name: Setup subuid
+      copy:
+        dest: "{{ item }}"
+        content: "root:100000:65536"
+      loop:
+        - /etc/subuid
+        - /etc/subgid
 
     - name: Start lxd service
       systemd:
@@ -53,10 +51,7 @@
         state: started
 
     - name: Init lxd
-      shell: "{{ item }}"
-      loop:
-        - zpool create -f lxd /dev/sdb
-        - lxd init --auto --storage-backend=zfs --storage-pool=lxd
+      shell: lxd init --auto
 
     - name: Clone lxdui
       git:
@@ -67,3 +62,8 @@
       shell:
         chdir: /root/lxdui
         cmd: python3 setup.py install
+
+    - name: Run lxdui
+      shell:
+        chdir: /root/lxdui
+        cmd: nohup lxdui start </dev/null >/dev/null 2>&1 &
